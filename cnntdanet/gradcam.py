@@ -33,8 +33,10 @@ class GradCAMOnCNN(GradCAMBase):
             
         self._cache['img'] = np.uint(255 * img)[0]
         self._cache['true_label'] = true_label
-        self._cache['target_label'] = target_label
-        
+        self._cache['target_label'] = target_label        
+        self._cache['grad_maps'] = []
+        self._cache['feature_maps'] = []
+
         local_heatmap = self._compute_local_heatmap(img, target_label)
         self._cache['heatmap'] = [local_heatmap]
 
@@ -85,7 +87,7 @@ class GradCAMOnCNN(GradCAMBase):
             class_channel = preds[:, target_label]
 
         # Taking the gradient of outputs w.r.t the last feature maps
-        grads = tape.gradient(class_channel, last_feature_maps)  
+        grads = tape.gradient(class_channel, last_feature_maps)
         
         # For each channel, taking the average of the gradient over spatial domain
         # This will indicate the channel importance
@@ -94,6 +96,8 @@ class GradCAMOnCNN(GradCAMBase):
         
         # Since the batch size = 1, removing the useless first axis
         last_feature_maps = tf.squeeze(last_feature_maps)
+        self._cache['grad_maps'].append(tf.squeeze(grads).numpy())
+        self._cache['feature_maps'].append(last_feature_maps.numpy())
         
         # The weighted sum of feature maps along channels with weight channel importance
         heatmap = last_feature_maps @ pooled_grads[..., tf.newaxis]
@@ -123,7 +127,9 @@ class GradCAMOnCNNTDANet(GradCAMBase):
         self._cache['tda'] = inputs[1].squeeze(0)
         self._cache['target_label'] = target_label
         self._cache['true_label'] = true_label
-        
+    
+        self._cache['grad_maps'] = []
+        self._cache['feature_maps'] = []
         local_heatmap = self._compute_local_heatmap(inputs, target_label)
         global_heatmap = self._compute_global_heatmap(inputs, target_label)
         self._cache['heatmap'] = [local_heatmap, global_heatmap]
@@ -139,6 +145,8 @@ class GradCAMOnCNNTDANet(GradCAMBase):
         grads = tape.gradient(class_channel, local_layer_output)
         pooled_grads = tf.reduce_mean(grads, (0, 1, 2))
         local_layer_output = tf.squeeze(local_layer_output)
+        self._cache['grad_maps'].append(tf.squeeze(grads).numpy())
+        self._cache['feature_maps'].append(local_layer_output.numpy())
         
         heatmap = local_layer_output @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
@@ -163,6 +171,8 @@ class GradCAMOnCNNTDANet(GradCAMBase):
         grads = tape.gradient(class_channel, global_layer_output)
         pooled_grads = tf.reduce_mean(grads, (0, 1))
         global_layer_output = tf.squeeze(global_layer_output)
+        self._cache['grad_maps'].append(tf.squeeze(grads).numpy())
+        self._cache['feature_maps'].append(global_layer_output.numpy())
         
         heatmap = global_layer_output @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
