@@ -5,12 +5,12 @@ This repository contains a Python package and all experimental scripts (or noteb
 To install the package, 
 
 ~~~
-> git clone https://github.com/postech-minds/cnntdanet.git
-> cd cnntdanet
+git clone https://github.com/postech-minds/cnntdanet.git
+cd cnntdanet
 ~~~
 
 The following command gives you a CNN-TDA Net trained on the dataset specified by the `--dataset` argument. You can find all arguments in the `train.py`.
 
 ~~~
-> python train.py --dataset fashion-mnist --method betti-curve --n_bins 100 --epochs 1
+python train.py --dataset fashion-mnist --method betti-curve --n_bins 100  
 ~~~
