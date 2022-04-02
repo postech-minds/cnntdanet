@@ -65,15 +65,15 @@ class GradCAMOnCNN(GradCAMBase):
 
     def _get_grad_model(self, model, layer_name):
         # Get models
-        local_pipeline = model.get_layer('local_pipeline')
-        tail = model.get_layer('tail')
+        img_network = model.get_layer('img_network')
+        head = model.get_layer('head')
 
         # Define forward pass
-        seq_input = local_pipeline.inputs
-        flatten = local_pipeline.output
-        output = tail(flatten)
+        seq_input = img_network.inputs
+        flatten = img_network.output
+        output = head(flatten)
 
-        last_feature_maps = local_pipeline.get_layer(layer_name).output
+        last_feature_maps = img_network.get_layer(layer_name).output
 
         return keras.models.Model([seq_input], [last_feature_maps, output])
 
@@ -184,22 +184,22 @@ class GradCAMOnCNNTDANet(GradCAMBase):
     
     def _get_grad_model(self, model, local_layer_name, global_layer_name):
         # Get models
-        local_pipeline = model.get_layer('local_pipeline')
-        global_pipeline = model.get_layer('global_pipeline')
-        tail = model.get_layer('tail')
+        img_network = model.get_layer('img_network')
+        tda_network = model.get_layer('tda_network')
+        head = model.get_layer('head')
 
         # Define forward pass
-        local_input = local_pipeline.inputs
-        local_flatten = local_pipeline.output
+        local_input = img_network.inputs
+        local_flatten = img_network.output
 
-        global_input = global_pipeline.inputs
-        global_flatten = global_pipeline.output
+        global_input = tda_network.inputs
+        global_flatten = tda_network.output
 
         concat = model.get_layer('concatenate')([local_flatten, global_flatten])
-        output = tail(concat)
+        output = head(concat)
 
-        local_layer_output = local_pipeline.get_layer(local_layer_name).output
-        global_layer_output = global_pipeline.get_layer(global_layer_name).output
+        local_layer_output = img_network.get_layer(local_layer_name).output
+        global_layer_output = tda_network.get_layer(global_layer_name).output
 
         return keras.models.Model([local_input, global_input], [local_layer_output, global_layer_output, output])
 

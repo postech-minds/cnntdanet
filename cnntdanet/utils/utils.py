@@ -13,6 +13,7 @@ def seed_all(seed):
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
+    tf.config.experimental.enable_op_determinism()
     
 def load_data(dir_data):
     trans_path = glob(f'{dir_data}/transient/*')
