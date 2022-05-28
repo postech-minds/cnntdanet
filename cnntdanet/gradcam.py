@@ -1,10 +1,9 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from collections import defaultdict
 
+import matplotlib.pyplot as plt
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from collections import defaultdict
 
 
 class GradCAMBase:
@@ -30,10 +29,10 @@ class GradCAMOnCNN(GradCAMBase):
     def to_heatmap(self, img, target_label=None, true_label=None):
         if img.ndim == 3:
             img = img[np.newaxis]
-            
+
         self._cache['img'] = np.uint(255 * img)[0]
         self._cache['true_label'] = true_label
-        self._cache['target_label'] = target_label        
+        self._cache['target_label'] = target_label
         self._cache['grad_maps'] = []
         self._cache['feature_maps'] = []
 
@@ -49,7 +48,7 @@ class GradCAMOnCNN(GradCAMBase):
         img = self._cache['img']
         heatmap = self._cache['heatmap'][0]
         cmap = 'gray' if img.shape[-1] == 1 else None
-            
+
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
         axes[0].imshow(img, cmap=cmap)       # Image
@@ -58,8 +57,9 @@ class GradCAMOnCNN(GradCAMBase):
         im = axes[2].imshow(heatmap, alpha=alpha, cmap='jet')  # Image + heatmap
         cax = fig.add_axes([0.91, 0.16, 0.01, 0.69])
         fig.colorbar(im, cax)
-        
-        fig.suptitle(f"Label: {label_decoder[self._cache['true_label']]} | Prediction: {label_decoder[self._cache['pred_label']]}")
+
+        fig.suptitle(f"Label: {label_decoder[self._cache['true_label']]} " +
+                     f"| Prediction: {label_decoder[self._cache['pred_label']]}")
         for ax in axes:
             ax.axis('off')
 
@@ -88,31 +88,31 @@ class GradCAMOnCNN(GradCAMBase):
 
         # Taking the gradient of outputs w.r.t the last feature maps
         grads = tape.gradient(class_channel, last_feature_maps)
-        
+
         # For each channel, taking the average of the gradient over spatial domain
         # This will indicate the channel importance
         # (0, 1, 2) means taking average along the axis 0, 1, 2 (# data, width, height)
         pooled_grads = tf.reduce_mean(grads, (0, 1, 2))
-        
+
         # Since the batch size = 1, removing the useless first axis
         last_feature_maps = tf.squeeze(last_feature_maps)
         self._cache['grad_maps'].append(tf.squeeze(grads).numpy())
         self._cache['feature_maps'].append(last_feature_maps.numpy())
-        
+
         # The weighted sum of feature maps along channels with weight channel importance
         heatmap = last_feature_maps @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
         heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
-        
+
         # [0, 1] to [0, 255]
-        heatmap = heatmap.numpy()[..., np.newaxis]      
+        heatmap = heatmap.numpy()[..., np.newaxis]
         heatmap = np.uint8(255 * heatmap)
-        
+
         # Matching the size of heatmap with the original image using PIL.Image object
-        heatmap = keras.preprocessing.image.array_to_img(heatmap) # np.ndarray -> PIL.Image
+        heatmap = keras.preprocessing.image.array_to_img(heatmap)  # np.ndarray -> PIL.Image
         heatmap = heatmap.resize((self._cache['img'].shape[1], self._cache['img'].shape[0]))  # Resizing
         heatmap = keras.preprocessing.image.img_to_array(heatmap)  # PIL.Image -> np.ndarr
-        
+
         return heatmap
 
 
@@ -120,20 +120,20 @@ class GradCAMOnCNNTDANet(GradCAMBase):
     def __init__(self, model, local_layer_name, global_layer_name):
         super().__init__(model=model)
         self._grad_model = self._get_grad_model(self.model, local_layer_name, global_layer_name)
-        
+
     def to_heatmap(self, inputs, target_label=None, true_label=None):
         # Grab the inputs
         self._cache['img'] = np.uint8(255 * inputs[0]).squeeze(0)
         self._cache['tda'] = inputs[1].squeeze(0)
         self._cache['target_label'] = target_label
         self._cache['true_label'] = true_label
-    
+
         self._cache['grad_maps'] = []
         self._cache['feature_maps'] = []
         local_heatmap = self._compute_local_heatmap(inputs, target_label)
         global_heatmap = self._compute_global_heatmap(inputs, target_label)
         self._cache['heatmap'] = [local_heatmap, global_heatmap]
-        
+
     def _compute_local_heatmap(self, inputs, target_label=None):
         with tf.GradientTape() as tape:
             local_layer_output, global_layer_output, preds = self._grad_model(inputs)
@@ -141,26 +141,26 @@ class GradCAMOnCNNTDANet(GradCAMBase):
             if target_label is None:
                 target_label = pred_label
             class_channel = preds[:, target_label]
-            
+
         grads = tape.gradient(class_channel, local_layer_output)
         pooled_grads = tf.reduce_mean(grads, (0, 1, 2))
         local_layer_output = tf.squeeze(local_layer_output)
         self._cache['grad_maps'].append(tf.squeeze(grads).numpy())
         self._cache['feature_maps'].append(local_layer_output.numpy())
-        
+
         heatmap = local_layer_output @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
         heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
 
         heatmap = np.uint8(255 * heatmap)[..., np.newaxis]
-        heatmap = keras.preprocessing.image.array_to_img(heatmap) # np.ndarray -> PIL.Image
+        heatmap = keras.preprocessing.image.array_to_img(heatmap)  # np.ndarray -> PIL.Image
         heatmap = heatmap.resize((self._cache['img'].shape[1], self._cache['img'].shape[0]))  # Resizing
         heatmap = keras.preprocessing.image.img_to_array(heatmap)  # PIL.Image -> np.ndarray
 
         return heatmap
-    
+
     def _compute_global_heatmap(self, inputs, target_label=None):
-        # For global pipeline    
+        # For global pipeline
         with tf.GradientTape() as tape:
             local_layer_output, global_layer_output, preds = self._grad_model(inputs)
             pred_label = tf.argmax(preds[0])
@@ -173,15 +173,15 @@ class GradCAMOnCNNTDANet(GradCAMBase):
         global_layer_output = tf.squeeze(global_layer_output)
         self._cache['grad_maps'].append(tf.squeeze(grads).numpy())
         self._cache['feature_maps'].append(global_layer_output.numpy())
-        
+
         heatmap = global_layer_output @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap)
         heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
         heatmap = heatmap.numpy()[..., np.newaxis]
         heatmap = np.hstack([heatmap] * 3)
-        
+
         return heatmap
-    
+
     def _get_grad_model(self, model, local_layer_name, global_layer_name):
         # Get models
         img_network = model.get_layer('img_network')
@@ -237,11 +237,11 @@ class GradCAMOnCNNTDANet(GradCAMBase):
         ax_mat.axis('off')
 
         fig.suptitle(
-            f"Label: {label_decoder[self._cache['true_label']]} | Prediction: {label_decoder[self._cache['pred_label']]}", 
+            f"Label: {label_decoder[self._cache['true_label']]} | " +
+            f"Prediction: {label_decoder[self._cache['pred_label']]}",
             fontsize=20,
-            y=1.03
+            y=0.98
         )
-        
+
         if save is not None:
             plt.savefig(fig, dpi=200)
-    
